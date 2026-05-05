@@ -269,20 +269,27 @@ class ChatDeepSeek(BaseChatOpenAI):
         **kwargs: Any,
     ) -> dict:
         payload = super()._get_request_payload(input_, stop=stop, **kwargs)
-        for message in payload["messages"]:
+        orig_messages = self._convert_input(input_).to_messages()
+        for orig_msg, message in zip(orig_messages, payload["messages"]):
             if message["role"] == "tool" and isinstance(message["content"], list):
                 message["content"] = json.dumps(message["content"])
-            elif message["role"] == "assistant" and isinstance(
-                message["content"], list
-            ):
-                # DeepSeek API expects assistant content to be a string, not a list.
-                # Extract text blocks and join them, or use empty string if none exist.
-                text_parts = [
-                    block.get("text", "")
-                    for block in message["content"]
-                    if isinstance(block, dict) and block.get("type") == "text"
-                ]
-                message["content"] = "".join(text_parts) if text_parts else ""
+            elif message["role"] == "assistant":
+                if isinstance(message["content"], list):
+                    # DeepSeek API expects assistant content to be a string, not a list.
+                    # Extract text blocks and join them, or use empty string if none exist.
+                    text_parts = [
+                        block.get("text", "")
+                        for block in message["content"]
+                        if isinstance(block, dict) and block.get("type") == "text"
+                    ]
+                    message["content"] = "".join(text_parts) if text_parts else ""
+                if (
+                    isinstance(orig_msg, AIMessage)
+                    and "reasoning_content" in orig_msg.additional_kwargs
+                ):
+                    message["reasoning_content"] = orig_msg.additional_kwargs[
+                        "reasoning_content"
+                    ]
 
         # Azure-hosted DeepSeek does not support the dict/object form of
         # tool_choice (e.g. {"type": "function", "function": {"name": "..."}}).
